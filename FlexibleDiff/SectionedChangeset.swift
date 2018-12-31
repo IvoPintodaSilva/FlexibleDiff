@@ -126,11 +126,10 @@ public struct SectionedChangeset {
 			                          identifier: itemIdentifier,
 			                          areEqual: areItemsEqual)
 
-			let isMutated = !changeset.hasNoChanges
-				|| metadata.mutations.contains(sourceOffset)
+			let isMutatedMetadata = metadata.mutations.contains(sourceOffset)
 				|| mutatedMoveDests.contains(destinationOffset)
 
-			if isMutated {
+			if changeset.hasNoChanges == false {
 				let section = SectionedChangeset.MutatedSection(source: sourceOffset,
                                                                 destination: destinationOffset,
                                                                 changeset: changeset)
@@ -140,8 +139,8 @@ public struct SectionedChangeset {
 			if isMove {
 				moves.append(Changeset.Move(source: sourceOffset,
                                             destination: destinationOffset,
-                                            isMutated: isMutated))
-			} else if isMutated {
+                                            isMutated: isMutatedMetadata))
+			} else if isMutatedMetadata {
 				mutations.insert(sourceOffset)
 			}
 		}

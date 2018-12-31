@@ -130,7 +130,7 @@ class SectionedChangesetSpec: QuickSpec {
 		}
 
 		describe("mutation") {
-			it("should reflect a mutated section") {
+			it("should only reflect a mutation in the section's items") {
 				diffTest(
 					previous: [
 						Section(identifier: "A", items: [])
@@ -139,6 +139,44 @@ class SectionedChangesetSpec: QuickSpec {
 						Section(identifier: "A", items: [
 							Section.Item(identifier: "A0", value: .max)
 						])
+					],
+					expected: SectionedChangeset(
+						sections: Changeset(),
+						mutatedSections: [
+							SectionedChangeset.MutatedSection(
+								source: 0,
+								destination: 0,
+								changeset: Changeset(inserts: [0])
+							)
+						]
+					)
+				)
+			}
+
+			it("should only reflect a mutation in the section") {
+				diffTest(
+					previous: [
+						Section(identifier: "A", metadata: "old", items: [])
+					],
+					current: [
+						Section(identifier: "A", metadata: "new", items: [])
+					],
+					expected: SectionedChangeset(
+						sections: Changeset(mutations: [0]),
+						mutatedSections: []
+					)
+				)
+			}
+
+			it("should reflect a mutation in the section and its items") {
+				diffTest(
+					previous: [
+						Section(identifier: "A", metadata: "old", items: [])
+					],
+					current: [
+						Section(identifier: "A", metadata: "new", items: [
+							Section.Item(identifier: "A0", value: .max)
+							])
 					],
 					expected: SectionedChangeset(
 						sections: Changeset(mutations: [0]),
@@ -177,7 +215,30 @@ class SectionedChangesetSpec: QuickSpec {
 				)
 			}
 
-			it("should reflect a section moved with mutations made") {
+			it("should reflect a section moved with one section mutation") {
+				diffTest(
+					previous: [
+						Section(identifier: "A", metadata: "old", items: []),
+						Section(identifier: "B", metadata: "old", items: []),
+						Section(identifier: "C", metadata: "old", items: [])
+					],
+					current: [
+						Section(identifier: "C", metadata: "old", items: []),
+						Section(identifier: "B", metadata: "old", items: []),
+						Section(identifier: "A", metadata: "new", items: [])
+					],
+					expected: SectionedChangeset(
+						sections: Changeset(moves: [
+							Changeset.Move(source: 0, destination: 2, isMutated: true),
+							Changeset.Move(source: 2, destination: 0, isMutated: false)
+						]),
+						mutatedSections: []
+					)
+				)
+			}
+
+
+			it("should reflect a section moved with item mutations made") {
 				diffTest(
 					previous: [
 						Section(identifier: "A", items: [
@@ -200,8 +261,8 @@ class SectionedChangesetSpec: QuickSpec {
 					],
 					expected: SectionedChangeset(
 						sections: Changeset(moves: [
-							Changeset.Move(source: 0, destination: 2, isMutated: true),
-							Changeset.Move(source: 2, destination: 0, isMutated: true)
+							Changeset.Move(source: 0, destination: 2, isMutated: false),
+							Changeset.Move(source: 2, destination: 0, isMutated: false)
 						]),
 						mutatedSections: [
 							SectionedChangeset.MutatedSection(
@@ -219,7 +280,49 @@ class SectionedChangesetSpec: QuickSpec {
 				)
 			}
 
-			it("should reflect a section moved with mutations made to replace a removal") {
+			it("should reflect a section moved with section and item mutations") {
+				diffTest(
+					previous: [
+						Section(identifier: "A", metadata: "old", items: [
+							Section.Item(identifier: "A0", value: .max)
+							]),
+						Section(identifier: "B", metadata: "old", items: []),
+						Section(identifier: "C", metadata: "old", items: [
+							Section.Item(identifier: "C0", value: .min)
+							])
+					],
+					current: [
+						Section(identifier: "C", metadata: "old", items: [
+							Section.Item(identifier: "C1", value: .max),
+							Section.Item(identifier: "C0", value: .min)
+							]),
+						Section(identifier: "B", metadata: "old", items: []),
+						Section(identifier: "A", metadata: "new", items: [
+							Section.Item(identifier: "A1", value: .min)
+							])
+					],
+					expected: SectionedChangeset(
+						sections: Changeset(moves: [
+							Changeset.Move(source: 0, destination: 2, isMutated: true),
+							Changeset.Move(source: 2, destination: 0, isMutated: false)
+							]),
+						mutatedSections: [
+							SectionedChangeset.MutatedSection(
+								source: 0,
+								destination: 2,
+								changeset: Changeset(inserts: [0], removals: [0])
+							),
+							SectionedChangeset.MutatedSection(
+								source: 2,
+								destination: 0,
+								changeset: Changeset(inserts: [0])
+							)
+						]
+					)
+				)
+			}
+
+			it("should reflect a section moved with item mutations made to replace a removal") {
 				diffTest(
 					previous: [
 						Section(identifier: "A", items: [
@@ -241,7 +344,7 @@ class SectionedChangesetSpec: QuickSpec {
 						sections: Changeset(
 							removals: [0],
 							moves: [
-								Changeset.Move(source: 2, destination: 0, isMutated: true)
+								Changeset.Move(source: 2, destination: 0, isMutated: false)
 							]
 						),
 						mutatedSections: [
@@ -308,8 +411,10 @@ private func reproducibilityTest(
 
 	let allRemovals = changeset.sections.removals
 		.union(IndexSet(changeset.sections.moves.map { $0.source }))
-	let allInsertions: [(Int?, Int)] = [changeset.sections.inserts.map { (nil, $0) },
-	                                    changeset.sections.moves.map { ($0.source as Int?, $0.destination) }]
+	let allInsertions: [(Int?, Int)] = [
+			changeset.sections.inserts.map { (nil, $0) },
+			changeset.sections.moves.map { ($0.isMutated ? nil : $0.source, $0.destination) }
+		]
 		.flatMap { $0 }
 		.sorted { lhs, rhs in lhs.1 < rhs.1 }
 
@@ -325,19 +430,11 @@ private func reproducibilityTest(
 		}
 	}
 
-	let mutatedMoves = Set(changeset.sections.moves.lazy
-		.filter { $0.isMutated }
-		.compactMap { Tuple2($0.source, $0.destination) })
-	let mutatedSections = Set(changeset.sections.mutations.map { Tuple2($0, $0) })
-		.union(mutatedMoves)
-	let records = Set(changeset.mutatedSections.map { Tuple2($0.source, $0.destination) })
-
-	// [BUG] It seems occasionally `Set.==` is not being picked up.
-	//       Nimble 7.3.1.
-	expect(records).to(equal(mutatedSections))
+	for index in changeset.sections.mutations {
+		values[index].metadata = current[index].metadata
+	}
 
 	for record in changeset.mutatedSections {
-		values[record.destination].metadata = current[record.destination].metadata
 		values[record.destination].items = reproduce(applying: record.changeset,
 		                                             to: values[record.destination].items,
 		                                             expecting: current[record.destination].items,
