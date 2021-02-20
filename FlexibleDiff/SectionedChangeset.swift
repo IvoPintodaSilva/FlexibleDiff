@@ -29,8 +29,8 @@ public struct SectionedChangeset {
 	/// The changes of sections.
 	///
 	/// - precondition: Offsets in `sections.mutations` and `sections.moves` must have a
-	///                 corresponding entry in `mutatedSections` if they represent a
-	///                 mutation.
+	///                 corresponding entry in `mutatedSections` if their metadata has
+	///                 been mutated.
 	public var sections = Changeset()
 
 	/// The changes of items in the mutated sections.
